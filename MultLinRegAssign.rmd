@@ -1,0 +1,163 @@
+---
+output:
+  word_document: default
+  html_document: default
+---
+# Jon Bailey
+
+```{r}
+library(readr)
+library(lubridate)
+library(tidyverse)
+library(tidymodels)
+library(GGally)
+library(glmnet)
+library(splines)
+library(MASS)
+
+bike <- read_csv("bike_cleaned.csv")
+
+bike = bike %>% mutate(dteday = mdy(dteday))
+
+#mdy is a lubridate package function
+```
+
+```{r}
+bike$season <- as.factor(bike$season)
+bike$mnth <- as.factor(bike$mnth)
+bike$holiday <- as.factor(bike$holiday)
+bike$weekday <- as.factor(bike$weekday)
+bike$workingday <- as.factor(bike$workingday)
+bike$weathersit <- as.factor(bike$weathersit)
+
+bike$hr <- as.factor(bike$hr)
+```
+
+### We must change the hour of the day variables from numeric to factor to show that the numbers do not have the numeric value that they represent (ie hr 24 is not greater than hr 12, they are representative of times of the day).
+
+### The variable that appears to be the most correlated with the count variable would be "hr" and you can see that during the night hours the count will dip and be very low, and then during the day hours the count will be much higher. 
+
+```{r}
+ggplot(bike,aes(x=hr,y=count)) + geom_boxplot() + theme_bw()
+```
+
+### There is an obvious correlation between hr and count, which can be shown that the hour of the day impacts the count of bikes.
+
+```{r}
+ggplot(bike,aes(x=season,y=count)) + geom_boxplot() + theme_bw()
+```
+
+### All seasons are about equal with the count of bikes except for winter, which is shown to have a lower count, most likely due to the cold weather.
+
+```{r}
+ggplot(bike,aes(x=mnth,y=count)) + geom_boxplot() + theme_bw()
+```
+
+### January is the lowest count due to the cold weather. July and June are the highest months due to warmer weather, with May, August and September close behind.
+
+```{r}
+ggplot(bike,aes(x=holiday,y=count)) + geom_boxplot() + theme_bw()
+```
+
+### Surprisingly, there are more bikers on NotHoliday than on Holiday, with a greater variability in the higher count values of the NotHoliday.
+
+```{r}
+ggplot(bike,aes(x=weekday,y=count)) + geom_boxplot() + theme_bw()
+```
+
+### Weekdays are fairly consistent with very little correlation, but Friday and Saturday are slightly above the others.
+
+```{r}
+ggplot(bike,aes(x=workingday,y=count)) + geom_boxplot() + theme_bw()
+```
+
+### There is very little difference between the count on NotWorkingDay and WorkingDay.
+
+```{r}
+ggplot(bike,aes(x=weathersit,y=count)) + geom_boxplot() + theme_bw()
+```
+
+### There is a large difference in the count for the above 4 variables, and it is shown that the count is much higher on NoPrecip days than on days with different precipitation levels.
+
+### The above model shows the hr variable (most correlated with the count variable) and shows each specific hour of the day with the estimated count of bikes at that specific hour. The temperature and precipitation values are also shown to have an impact on the number of bikers.
+
+# Ridge Regression
+
+```{r}
+bike2 = bike %>% dplyr::select("season", "mnth", "hr", "holiday", "weekday", "workingday", "weathersit", "temp", "atemp", "hum", "windspeed", "count")
+
+bike_recipe = recipe(count ~ season + mnth + hr + holiday + weekday + workingday + weathersit + temp + atemp + hum + windspeed, data = bike2) %>%
+  step_dummy(all_nominal()) %>% 
+  step_center(all_predictors()) %>%
+  step_scale(all_predictors())
+
+ridge_model = linear_reg(mixture = 0) %>% #mixture is 0 for ridge, 1 for lasso
+  set_engine("glmnet")
+
+ridge_wflow = workflow() %>%
+  add_model(ridge_model) %>%
+  add_recipe(bike_recipe)
+
+ridge_fit = fit(ridge_wflow, bike2)
+```
+
+
+```{r}
+ridge_fit %>%
+  pull_workflow_fit() %>%
+  pluck("fit")
+```
+
+### Based on the above Lambda values suggested, I will choose the value of 30.
+
+```{r}
+ridge_fit %>%
+  pull_workflow_fit() %>%
+  pluck("fit") %>%
+  coef(s = 30)
+```
+
+### The largest range of coefficient values is the hour of the day, with 5:00pm as the highest positive value for time. This makes sense, as maany bikers would want to go at this time of the day. The lowest time value is 4:00am, which makes sense as many bikers would not be out at this time. 
+
+### Another variable that has a high coefficient value is the temperature, which makes sense as to being a large factor in determining whether a biker will decide to go for a ride. Humidity is a somewhat important variable, as this could affect decisions of going for a ride. 
+
+### The weather variable shows that most bikers prefer no precipitation much more than light precipation, which shows that bikers do not like to be in the rain. 
+
+# Lasso Regression
+
+```{r}
+bike_recipe = recipe(count ~ season + mnth + hr + holiday + weekday + workingday + weathersit + temp + atemp + hum + windspeed, data = bike2) %>%
+  step_dummy(all_nominal()) %>%
+  step_center(all_predictors()) %>%
+  step_scale(all_predictors())
+
+lasso_model = linear_reg(mixture = 1) %>% 
+  set_engine("glmnet")
+
+lasso_wflow = workflow() %>%
+  add_model(ridge_model) %>%
+  add_recipe(bike_recipe)
+
+lasso_fit = fit(ridge_wflow,bike2)
+```
+
+```{r}
+lasso_fit %>%
+  pull_workflow_fit() %>%
+  pluck("fit")
+```
+
+### From the above values, the lambda value of 30 looks to be a good judge for this dataset. 
+
+```{r}
+lasso_fit %>%
+  pull_workflow_fit() %>%
+  pluck("fit") %>%
+  coef(s = 30)
+```
+
+### From the above dataset, two high values in terms of time are 8:00am and 5:00pm, which definitely makes sense, as these two values are separate from the workday and are good times of the day. A value that is not significant is holiday versus not holiday, which is somewhat surprising, as I thought that more bikers would be out on holidays when they have time. 
+
+### A value that is significant is the temperature value, as the temperature can greatly affect the decision of whether or not to go on a bike ride. 
+
+### A variable that does not show much significance is a specific day of the week to show higher numbers of bikers. This is surprising that the numbers remain fairly consistent, as I thought that the numbers would be higher on Saturdays and Sundays since people are not working. 

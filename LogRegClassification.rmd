@@ -1,0 +1,308 @@
+---
+output:
+  word_document: default
+  html_document: default
+---
+# Jon Bailey
+
+```{r}
+library(tidyverse)
+library(tidymodels)
+library(e1071)
+library(ROCR)
+library(glmnet)
+```
+
+```{r}
+parole <- read_csv("parole.csv")
+```
+
+```{r}
+parole = parole %>%
+  mutate(male = as_factor(male)) %>%
+  mutate(male = fct_recode(male, "Female" = "0", "Male" = "1")) %>%
+  mutate(race = as_factor(race)) %>%
+  mutate(race = fct_recode(race, "White" = "1", "Otherwise" = "2")) %>%
+  mutate(state = as_factor(state)) %>%
+  mutate(state = fct_recode(state, "Other" = "1", "Kentucky" = "2", "Louisiana" = "3", "Virginia" = "4")) %>%
+  mutate(crime = as_factor(crime)) %>%
+  mutate(crime = fct_recode(crime, "Other" = "1", "Larceny" = "2", "Drugs" = "3", "Driving" = "4")) %>%
+  mutate(multiple.offenses = as_factor(multiple.offenses)) %>%
+  mutate(multiple.offenses = fct_recode(multiple.offenses, "MultipleOffenses" = "1", "Other" = "0")) %>%
+  mutate(violator = as_factor(violator)) %>%
+  mutate(violator = fct_recode(violator, "Violation" = "1", "NoViolation" = "0"))
+
+```
+
+### The above block renamed the variables as factors, and then recoded the categorical variables from numerics into meaningful strings of data.
+
+```{r}
+set.seed(12345)
+parole_split = initial_split(parole, prob = 0.70, strata = violator)
+train = training(parole_split)
+test = testing(parole_split)
+```
+
+### In the test dataset, there are 168 rows and 9 columns. In the train dataset, there are 507 rows and 9 columns. 
+
+```{r}
+ggplot(parole, aes(x=male, fill = violator)) +
+  geom_bar(position = "fill") +
+  theme_bw()
+```
+
+```{r}
+ggplot(parole, aes(x=race, fill = violator)) +
+  geom_bar(position = "fill") +
+  theme_bw()
+```
+
+```{r}
+ggplot(parole, aes(x=state, fill = violator)) +
+  geom_bar(position = "fill") +
+  theme_bw()
+```
+
+```{r}
+ggplot(parole, aes(x=crime, fill = violator)) +
+  geom_bar(position = "fill") +
+  theme_bw()
+```
+
+```{r}
+ggplot(parole, aes(x=multiple.offenses, fill = violator)) +
+  geom_bar(position = "fill") +
+  theme_bw()
+```
+
+### The above graphs show slight variations in the data and how these factors relate to whether individuals were likely to break their parole or not. In terms of male or female, these data showed that gender is not a good predictor of whether someone is more likely to break their parole.
+
+### In terms of race, races other than white are predicted to be slightly higher in breaking their parole.
+
+### In terms of state, this is by far the highest predictor of breaking parole, with Louisiana being much higher in being predicted to break parole, and Virginia being much lower in predicted of breaking parole. 
+
+### In terms of crime, driving-related crimes are predicted to be the lowest in breaking parole.
+
+### Finally, individuals with multiple offenses are predicted to be slightly higher in breaking their parole. 
+
+### The best predictor of the variable violator, or whether or not an individual can be predicted to break their parole, is the variable state.
+
+```{r}
+parole_model = 
+  logistic_reg() %>%
+  set_engine("glm")
+
+parole_recipe = recipe(violator ~ state, parole) %>%
+  step_dummy(all_nominal(), -all_outcomes())
+
+logreg_wf = workflow() %>%
+  add_recipe(parole_recipe) %>%
+  add_model(parole_model)
+
+parole_fit = fit(logreg_wf, parole)
+```
+
+```{r}
+summary(parole_fit$fit$fit$fit)
+```
+
+### Note the AIC of this model, which is 390.89, and this is a measure of the model quality. This value is used to measure the quality compared to other models, and a smaller AIC is usually seen as better. In looking at the p-values, both Louisiana and Virginia are very significant, but in different ways. Louisiana is significant in predicting that more individuals from that state are more likely to break their parole, and Virginia is significant in predicting more individuals from that state are less likely to break their parole. 
+
+```{r}
+train_model = 
+  logistic_reg() %>%
+  set_engine("glm")
+
+train_recipe = recipe(violator ~ state, train) %>%
+  step_dummy(all_nominal(), -all_outcomes())
+
+trainlogreg_wf = workflow() %>%
+  add_recipe(train_recipe) %>%
+  add_model(train_model)
+
+train_fit = fit(trainlogreg_wf, train)
+```
+
+```{r}
+summary(train_fit$fit$fit$fit)
+```
+
+### The AIC of this model, 308.7, is better than the AIC of the logistical regression model of the parole dataset, which means that this model is better quality for predicting. 
+
+```{r Running Same Model Test for Crime Predicting Parole Violation}
+crime_model = 
+  logistic_reg() %>%
+  set_engine("glm")
+
+crime_recipe = recipe(violator ~ crime, train) %>%
+  step_dummy(all_nominal(), -all_outcomes())
+
+crimelogreg_wf = workflow() %>%
+  add_recipe(crime_recipe) %>%
+  add_model(crime_model)
+
+crime_fit = fit(crimelogreg_wf, train)
+```
+
+```{r}
+summary(crime_fit$fit$fit$fit)
+```
+
+```{r Comparing all Variables to See Significance}
+alltrain_model = 
+  logistic_reg() %>%
+  set_engine("glm")
+
+alltrain_recipe = recipe(violator ~ male + race + state + crime + multiple.offenses, train) %>%
+  step_dummy(all_nominal(), -all_outcomes())
+
+alltrainlogreg_wf = workflow() %>%
+  add_recipe(alltrain_recipe) %>%
+  add_model(alltrain_model)
+
+alltrain_fit = fit(alltrainlogreg_wf, train)
+```
+
+```{r}
+summary(alltrain_fit$fit$fit$fit)
+```
+
+### From the above model, you can see that the state of Virginia is once again significant in predicting whether an individual will violate their parole. Another variable that is significant in predicting this is if an individual has committed multiple offenses then they are more likely to violate their parole as well. All of the other variable's p-values are not significant in predicting parole violation in this model. The AIC for this model is 295.3, which has decreased from the previous models once again, which means that the quality is higher for this model as well. I would say that this model is not very intuitive, only due to the lack of strong predictions that can be made from the above model. I can only predict that a parolee from Virginia is less likely to break their parole, and that someone with multiple offenses is more likely, but nothing beyond that. We need more information to make solid predictions.
+
+# Create a logistic regression model using the training set to predict “violator” using the variables - state, multiple.offenses, and race
+
+```{r}
+selecttrain_model = 
+  logistic_reg() %>%
+  set_engine("glm")
+
+selecttrain_recipe = recipe(violator ~ state + multiple.offenses + race, train) %>%
+  step_dummy(all_nominal(), -all_outcomes())
+
+selecttrainlogreg_wf = workflow() %>%
+  add_recipe(selecttrain_recipe) %>%
+  add_model(selecttrain_model)
+
+selecttrain_fit = fit(selecttrainlogreg_wf, train)
+```
+
+```{r}
+summary(selecttrain_fit$fit$fit$fit)
+```
+
+### The most significant variables in the above model are state and multiple offenses, with Virginia showing to have a less likely prediction of breaking their parole, and individuals with multiple offenses are more likely to break parole. The AIC for this model is 289.99, which is the lowest AIC for any model created so far, leading this model to be the highest quality model. 
+
+# Predict probability of breaking parole for Parolee1: Louisiana with multiple offenses and white race
+
+```{r}
+newdata = data.frame(state = "Louisiana", multiple.offenses = "MultipleOffenses", race = "White")
+predict(selecttrain_fit, newdata, type = "prob")
+```
+
+### Based on the above parolee information, this individual has a 55.7% chance of not violating his/her parole, with a 44.3% chance of violating his/her parole.
+
+# Predict probability of breaking parole for Parolee2: Kentucky with no multiple offenses and other race
+```{r}
+newdata2 = data.frame(state = "Kentucky", multiple.offenses = "Other", race = "Otherwise")
+predict(selecttrain_fit, newdata2, type = "prob")
+```
+
+# The above individual has an 84.8% chance of not violating his/her parole, and a 15.2% chance of violating parole.
+
+```{r}
+predictions = predict(selecttrain_fit,train,type = "prob")
+head(predictions)
+```
+
+```{r}
+predictions = predict(selecttrain_fit,train,type = "prob") [2]
+head(predictions)
+```
+# Threshold selection
+```{r}
+ROCRpred = prediction(predictions, train$violator)
+
+ROCRperf = performance(ROCRpred, "tpr", "fpr")
+plot(ROCRperf, colorize=TRUE, print.cutoffs.at=seq(0,1,by=0.1), text.adj=c(-0.2,1.7))
+```
+
+```{r}
+as.numeric(performance(ROCRpred, "auc")@y.values)
+```
+
+```{r}
+opt.cut = function(perf, pred) {
+  cut.ind = mapply(FUN = function(x, y, p) {
+    d = (x - 0)^2 + (y-1)^2
+    ind = which(d==min(d))
+    c(sensitivity = y[[ind]], specificity = 1-x[[ind]],
+      cutoff = p[[ind]])
+  }, perf@x.values, perf@y.values, pred@cutoffs)
+}
+print(opt.cut(ROCRperf, ROCRpred))
+```
+
+# Test thresholds to evaluate accuracy
+
+```{r}
+t1 = table(train$violator,predictions > 0.1070172)
+t1
+```
+
+## Calculate accuracy
+
+```{r}
+(t1[1,1]+t1[2,2])/nrow(train)
+```
+
+### The accuracy of the model on the train dataset is 0.8067061 (81% accurate). The sensitivity of the model is 0.7118644, and the specificity of the model is 0.7968750. 
+
+### Implications of incorrectly classifying a parolee is that you predict that they will violate parole, and then they do not, or that they will not violate parole, and then they do. I predicted that 80 individuals would not violate parole, and they did violate. I predicted that 18 would violate their parole, and they did not. 
+
+# Identify Probability Threshold that Best Maximizes Accuracy
+
+```{r Accuracy with threshold of 0.5}
+t1 = table(train$violator, predictions > 0.5)
+t1
+(t1[1,1] + t1[2,2])/nrow(train)
+```
+
+```{r Accuracy with threshold of 0.6}
+t1 = table(train$violator, predictions > 0.4)
+t1
+(t1[1,1] + t1[2,2])/nrow(train)
+```
+
+```{r Accuracy with threshold of 0.3}
+t1 = table(train$violator, predictions > 0.3)
+t1
+(t1[1,1] + t1[2,2])/nrow(train)
+```
+
+### After trying thresholds of 0.5, 0.4, and 0.3, the threshold with the highest accuracy is 0.5. 
+
+# Determine Accuracy of Testing Dataset
+
+```{r}
+test_model = 
+  logistic_reg() %>%
+  set_engine("glm")
+
+test_recipe = recipe(violator ~ state + multiple.offenses + race, test) %>%
+  step_dummy(all_nominal(), -all_outcomes())
+
+testlogreg_wf = workflow() %>%
+  add_recipe(test_recipe) %>%
+  add_model(test_model)
+
+test_fit = fit(testlogreg_wf, test)
+
+predictions = predict(test_fit,test,type = "prob") [2]
+head(predictions)
+
+t1 = table(test$violator, predictions > 0.5)
+t1
+(t1[1,1] + t1[2,2])/nrow(test)
+```
+
+### The accuracy of the model of the testing dataset is 0.9345238 (93%). The accuracy of the test model at 0.5 as the threshold is higher than the accuracy of the train model, compared at 89%.

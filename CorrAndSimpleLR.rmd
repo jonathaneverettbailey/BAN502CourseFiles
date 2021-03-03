@@ -1,0 +1,62 @@
+```{r}
+library(tidyverse)
+library(tidymodels)
+library(GGally)
+library(lmtest)
+
+air=airquality
+```
+
+### The dataset "air" has 153 observations of 6 variables, which means that there are 153 rows and 6 columns. Yes, there is missing data, and the missing values are all in the Ozone and Solar.R columns. I think that the Y (predicted) variable will be temperature, and that the other columns will use their data to predict temperature.
+
+```{r}
+air2 <- drop_na(air)
+```
+
+### In the new air2 dataframe, there are 111 rows and 6 columns, which means that there were 42 rows with missing data.
+
+```{r Correlation Visualization Between Column Variables}
+ggpairs(air2)
+```
+
+```{r}
+ggcorr(air2,label = TRUE)
+```
+
+### The variable most strongly correlated with the Ozone variable is the Temperature variable, and the variable least strongly correlated would be the Day variable. 
+
+```{r}
+ggplot(air2, aes(x=Temp,y=Ozone)) +
+         geom_point()
+```
+
+### There is a definite strong correlation between the Temperature variable and the Ozone variable, with the exception of a few outliers. This can be used to show that the temperature definitely has an impact on the ozone levels, in that when temperature goes up, the ozone levels go up as well.
+
+```{r}
+lm_model <- linear_reg() %>%
+  set_engine('lm') %>%
+  set_mode('regression')
+lm_model
+```
+
+```{r}
+lmfit <- lm_model %>%
+  fit(Ozone ~ Temp,data=air2)
+summary(lmfit$fit)
+
+# BREAK IN CODE
+
+#airfit <- lm(Ozone ~ Temp,data=air2)
+#summary(airfit$fit)
+
+confint(lmfit$fit)
+```
+
+```{r}
+ggplot(air2, aes(x=Temp,y=Ozone)) +
+         geom_smooth(method="lm", se = FALSE)
+```
+
+### When the temperature is 80, the Ozone can be predicted to be very close to 48.
+
+### There is a definite linear relationship between the x variable (Temp) and the y variable (Ozone), and when the temp goes up, the ozone goes up as well. The residuals of the ozone and temperature values are independent from each individual value in that each ozone residual cannot be used to predict the next ozone residual, and the values can fluctuate. Yes, there is an equal value between the line of regression and the values in the graph. These residuals are normally distributed in this regression as well. 
